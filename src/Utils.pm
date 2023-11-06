@@ -226,7 +226,6 @@ sub calcTimeFromPathfinding {
 
 	if ($pos->{x} == $pos_to->{x} && $pos->{y} == $pos_to->{y}) {
 		return 0;
-		}
 	}
 
 	my $solution = get_solution($field, $pos, $pos_to);
