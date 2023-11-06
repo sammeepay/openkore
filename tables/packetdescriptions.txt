@@ -472,6 +472,9 @@
 08D0 Inventory Equip
 08D1 Inventory Un-Equip
 08D2 High Jump
+08D5 Char Move Slot Reply
+08E3 Char Renamed
+08FD Char Rename Result
 08D6 NPC clear dialog
 08E2 Navigation
 08E3 Char Update Info
@@ -947,6 +950,8 @@
 08C1 Macro Start
 08C2 Macro Stop
 08C9 Cash Shop Request Items
+08D4 Char Move Slot
+08FC Char Rename
 096E Merge Item Request
 0970 Char Create Request
 0974 Merge Item Cancel

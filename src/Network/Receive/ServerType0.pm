@@ -255,7 +255,7 @@ sub new {
 		'0194' => ['character_name', 'a4 Z24', [qw(ID name)]],
 		'0195' => ['actor_info', 'a4 Z24 Z24 Z24 Z24', [qw(ID name partyName guildName guildTitle)]],
 		'0196' => ['actor_status_active', 'v a4 C', [qw(type ID flag)]],
-		'0199' => ['map_property', 'v', [qw(type)]],
+		'0199' => ['map_property', 'v', [qw(map_property_type)]],
 		'019A' => ['pvp_rank', 'V3', [qw(ID rank num)]],
 		'019B' => ['unit_levelup', 'a4 V', [qw(ID type)]],
 		'019E' => ['pet_capture_process'],
@@ -291,7 +291,7 @@ sub new {
 		'01D2' => ['combo_delay', 'a4 V', [qw(ID delay)]],
 		'01D3' => ['sound_effect', 'Z24 C V a4', [qw(name type term ID)]],
 		'01D4' => ['npc_talk_text', 'a4', [qw(ID)]],
-		'01D6' => ['map_property2', 'v', [qw(type)]],
+		'01D6' => ['map_property', 'v', [qw(map_type)]],
 		'01D7' => ['player_equipment', 'a4 C v2', [qw(sourceID type ID1 ID2)]],
 		# OLD' 01D8' => ['actor_exists', 'a4 v14 a4 x4 v x C a3 x2 C v',			[qw(ID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tophead midhead hair_color clothes_color head_dir guildID skillstatus sex coords act lv)]],
 		'01D8' => ['actor_exists', 'a4 v14 a4 a2 v2 C2 a3 C3 v',		[qw(ID walk_speed opt1 opt2 option type hair_style weapon shield lowhead tophead midhead hair_color clothes_color head_dir guildID emblemID manner opt3 stance sex coords unknown1 unknown2 act lv)]], # standing
@@ -448,7 +448,7 @@ sub new {
 		# a4 a4 a4 V3 v C V ?
 		#'02E1' => ['actor_action', 'a4 a4 a4 V2 v x2 v x2 C v', [qw(sourceID targetID tick src_speed dst_speed damage div type dual_wield_damage)]],
 		'02E1' => ['actor_action', 'a4 a4 a4 V3 v C V', [qw(sourceID targetID tick src_speed dst_speed damage div type dual_wield_damage)]],
-		'02E7' => ['map_property', 'v2 a*', [qw(len type info_table)]],
+		'02E7' => ['map_property', 'x2 v b16', [qw(map_property_type info_bits)]],
 		'02E8' => ['inventory_items_stackable', 'v a*', [qw(len itemInfo)]],
 		'02E9' => ['cart_items_stackable', 'v a*', [qw(len itemInfo)]],
 		'02EA' => ['storage_items_stackable', 'v a*', [qw(len itemInfo)]],
@@ -540,6 +540,9 @@ sub new {
 		'08CD' => ['actor_movement_interrupted', 'a4 v2', [qw(ID x y)]],
 		'08CF' => ['revolving_entity', 'a4 v v', [qw(sourceID type entity)]],
 		'08D2' => ['high_jump', 'a4 v2', [qw(ID x y)]],
+		'08D5' => ['char_move_slot_reply', 'v3', [qw(unknown reply moveCount)]],
+		'08E3' => ['char_renamed', 'a*', [qw(charInfo)]],
+		'08FD' => ['char_rename_result', 'v x', [qw(result)]],
 		'08E2' => ['navigate_to', 'C3 Z16 v3', [qw(type flag hide_window map x y mob_id)]],
 		'08FE' => ['quest_update_mission_hunt', 'v a*', [qw(len message)]],
 		'08FF' => ['actor_status_active', 'a4 v V4', [qw(ID type tick unknown1 unknown2 unknown3)]],
@@ -578,7 +581,7 @@ sub new {
 		'0997' => ['show_eq', 'v Z24 v7 v C a*', [qw(len name jobID hair_style tophead midhead lowhead robe hair_color clothes_color sex equips_info)]],
 		'0999' => ['equip_item', 'a2 V v C', [qw(ID type viewID success)]], #11
 		'099A' => ['unequip_item', 'a2 V C', [qw(ID type success)]],#9
-		'099B' => ['map_property3', 'v a4', [qw(type info_table)]],
+		'099B' => ['map_property', 'v b16', [qw(map_type info_bits)]],
 		'099D' => ['received_characters', 'v a*', [qw(len charInfo)]],
 		'099F' => ['area_spell_multiple2', 'v a*', [qw(len spellInfo)]], # -1
 		'09A0' => ['sync_received_characters', 'V', [qw(sync_Count)]],
@@ -1193,49 +1196,6 @@ sub public_chat {
 	});
 }
 
-sub map_property {
-	my ($self, $args) = @_;
-
-	if($config{'status_mapProperty'}){
-		$char->setStatus(@$_) for map {[$_->[1], $args->{type} == $_->[0]]}
-		grep { $args->{type} == $_->[0] || $char->{statuses}{$_->[1]} }
-		map {[$_, defined $mapPropertyTypeHandle{$_} ? $mapPropertyTypeHandle{$_} : "UNKNOWN_MAPPROPERTY_TYPE_$_"]}
-		1 .. List::Util::max $args->{type}, keys %mapPropertyTypeHandle;
-
-		if ($args->{info_table}) {
-			my $info_table = unpack('V1',$args->{info_table});
-			for (my $i = 0; $i < 16; $i++) {
-				if ($info_table&(1<<$i)) {
-					$char->setStatus(defined $mapPropertyInfoHandle{$i} ? $mapPropertyInfoHandle{$i} : "UNKNOWN_MAPPROPERTY_INFO_$i",1);
-				}
-			}
-		}
-	}
-	$pvp = {1 => 1, 3 => 2}->{$args->{type}};
-	if ($pvp) {
-		Plugins::callHook('pvp_mode', {
-			pvp => $pvp # 1 PvP, 2 GvG
-		});
-	}
-}
-
-sub map_property2 {
-	my ($self, $args) = @_;
-
-	if($config{'status_mapType'}){
-		$char->setStatus(@$_) for map {[$_->[1], $args->{type} == $_->[0]]}
-		grep { $args->{type} == $_->[0] || $char->{statuses}{$_->[1]} }
-		map {[$_, defined $mapTypeHandle{$_} ? $mapTypeHandle{$_} : "UNKNOWN_MAPTYPE_$_"]}
-		0 .. List::Util::max $args->{type}, keys %mapTypeHandle;
-	}
-	$pvp = {6 => 1, 8 => 2, 19 => 3}->{$args->{type}};
-	if ($pvp) {
-		Plugins::callHook('pvp_mode', {
-			pvp => $pvp # 1 PvP, 2 GvG, 3 Battleground
-		});
-	}
-}
-
 sub skill_use {
 	my ($self, $args) = @_;
 	return unless changeToInGameState();
@@ -1388,11 +1348,13 @@ sub skill_used_no_damage {
 			$args->{sourceID} eq $accountID or $args->{sourceID} eq $args->{targetID};
 	countCastOn($args->{sourceID}, $args->{targetID}, $args->{skillID});
 	if ($args->{sourceID} eq $accountID) {
-		my $pos = calcPosition($char);
+		my $pos = calcPosFromPathfinding($field, $char);
 		$char->{pos} = $pos;
 		$char->{pos_to} = $pos;
 		$char->{time_move} = 0;
 		$char->{time_move_calc} = 0;
+		$char->{solution} = [];
+		push(@{$char->{solution}}, { x => $char->{pos}{x}, y => $char->{pos}{y} });
 	}
 
 	# Resolve source and target names

@@ -102,11 +102,15 @@ sub reset {
 	$hookArgs{return} = 1;
 	Plugins::callHook('PathFindingReset', \%hookArgs);
 	if ($hookArgs{return}) {
+		$args{avoidWalls} = 1 unless (defined $args{avoidWalls});
 		$args{weight_map} = \($args{field}->{weightMap}) unless (defined $args{weight_map});
+		$args{customWeights} = 0 unless (defined $args{customWeights});
+		$args{secondWeightMap} = undef unless (defined $args{secondWeightMap});
+		$args{randomFactor} = 0 unless (defined $args{randomFactor});
+		$args{useManhattan} = 0 unless (defined $args{useManhattan});
 		$args{width} = $args{field}{width} unless (defined $args{width});
 		$args{height} = $args{field}{height} unless (defined $args{height});
 		$args{timeout} = 1500 unless (defined $args{timeout});
-		$args{avoidWalls} = 1 unless (defined $args{avoidWalls});
 		$args{min_x} = 0 unless (defined $args{min_x});
 		$args{max_x} = ($args{width}-1) unless (defined $args{max_x});
 		$args{min_y} = 0 unless (defined $args{min_y});
@@ -114,8 +118,12 @@ sub reset {
 	}
 
 	return $class->_reset(
-		$args{weight_map},
-		$args{avoidWalls},
+		$args{weight_map}, 
+		$args{avoidWalls}, 
+		$args{customWeights},
+		$args{secondWeightMap},
+		$args{randomFactor},
+		$args{useManhattan},
 		$args{width},
 		$args{height},
 		$args{start}{x},

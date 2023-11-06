@@ -245,6 +245,8 @@ sub new {
 		'08B8' => ['send_pin_password','a4 Z*', [qw(accountID pin)]],
 		'08C1' => ['macro_start'],#2
 		'08C2' => ['macro_stop'],#2
+		'08D4' => ['char_move_slot','v3', [qw(fromSlot toSlot movesCount)]],
+		'08FC' => ['char_rename', 'a4 a24', [qw(charID newName)]],
 		'08C9' => ['request_cashitems'],#2
 		'096E' => ['merge_item_request', 'v a*', [qw(length itemList)]], #-1
 		'0970' => ['char_create', 'a24 C v2', [qw(name slot hair_style hair_color)]],

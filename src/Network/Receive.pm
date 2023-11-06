@@ -962,6 +962,8 @@ sub character_creation_successful {
 
 	$character->{exp} = 0;
 	$character->{exp_job} = 0;
+	$character->{rename_addon} = 0;
+	$character->{slot_addon} = 0;
 
 	if ((!exists($character->{sex})) || ($character->{sex} ne "0" && $character->{sex} ne "1")) { $character->{sex} = $accountSex2; }
 
@@ -1267,6 +1269,8 @@ sub map_loaded {
 	message(TF("Your Coordinates: %s, %s\n", $char->{pos}{x}, $char->{pos}{y}), undef, 1);
 	$char->{time_move} = 0;
 	$char->{time_move_calc} = 0;
+	$char->{solution} = [];
+	push(@{$char->{solution}}, { x => $char->{pos}{x}, y => $char->{pos}{y} });
 
 	# set initial status from data received from the char server (seems needed on eA, dunno about kRO)}
 	if ($masterServer->{private}){ setStatus($char, $char->{opt1}, $char->{opt2}, $char->{option}); }
@@ -4215,27 +4219,65 @@ sub actor_status_active {
 	}
 }
 
-#099B
-sub map_property3 {
+# 0199, 01D6, 02E7, 099B
+sub parse_map_property {
 	my ($self, $args) = @_;
 
-	if ($config{'status_mapType'}){
-		$char->setStatus(@$_) for map {[$_->[1], $args->{type} == $_->[0]]}
-		grep { $args->{type} == $_->[0] || $char->{statuses}{$_->[1]} }
-		map {[$_, defined $mapTypeHandle{$_} ? $mapTypeHandle{$_} : "UNKNOWN_MAPTYPE_$_"]}
-		0 .. List::Util::max $args->{type}, keys %mapTypeHandle;
+	if (defined $args->{info_bits}) {
+		$args->{info_status} = [split //, $args->{info_bits}];
+	}
 
-		if ($args->{info_table}) {
-			my $info_table = unpack('V1',$args->{info_table});
+	# 1 PvP, 2 GvG, 3 Battleground
+	if (defined $args->{mapPropertyType}) {
+		# 0199, 02E7
+		$args->{pvp} = {1 => 1, 3 => 2}->{$args->{mapPropertyType}};
+	} elsif (defined $args->{mapType}) {
+		# 01D6, 099B
+		$args->{pvp} = {6 => 1, 8 => 2, 19 => 3}->{$args->{mapType}};
+	}
+}
+
+sub reconstuct_map_property {
+	my ($self, $args) = @_;
+
+	if (defined $args->{info_status}) {
+		$args->{info_bits} = join '', @{$args->{info_status}};
+	}
+}
+
+sub map_property {
+	my ($self, $args) = @_;
+
+	if ($config{'status_mapType'}) {
+		# 0199, 02E7
+		if (defined $args->{map_property_type}) {
+			$char->setStatus(@$_) for map {[$_->[1], $args->{map_property_type} == $_->[0]]}
+			grep { $args->{map_property_type} == $_->[0] || $char->{statuses}{$_->[1]} }
+			map {[$_, $mapPropertyTypeHandle{$_} // "UNKNOWN_MAPPROPERTY_TYPE_$_"]}
+			1 .. List::Util::max $args->{map_property_type}, keys %mapPropertyTypeHandle;
+		}
+
+		# 01D6, 099B
+		if (defined $args->{map_type}) {
+			$char->setStatus(@$_) for map {[$_->[1], $args->{map_type} == $_->[0]]}
+			grep { $args->{map_type} == $_->[0] || $char->{statuses}{$_->[1]} }
+			map {[$_, $mapTypeHandle{$_} // "UNKNOWN_MAPTYPE_$_"]}
+			0 .. List::Util::max $args->{map_type}, keys %mapTypeHandle;
+		}
+	}
+
+		if ($config{'status_mapProperty'}) {
+		# 02E7, 099B
+		if (defined $args->{info_status}) {
 			for (my $i = 0; $i < 16; $i++) {
-				if ($info_table&(1<<$i)) {
+				if ($args->{info_status}[$i]) {
 					$char->setStatus(defined $mapPropertyInfoHandle{$i} ? $mapPropertyInfoHandle{$i} : "UNKNOWN_MAPPROPERTY_INFO_$i",1);
 				}
 			}
 		}
 	}
 
-	$pvp = {6 => 1, 8 => 2, 19 => 3}->{$args->{type}};
+	$pvp = $args->{pvp};
 	if ($pvp) {
 		Plugins::callHook('pvp_mode', {pvp => $pvp});# 1 PvP, 2 GvG, 3 Battleground
 	}
@@ -5457,7 +5499,12 @@ sub character_moves {
 	my $dist = blockDistance($char->{pos}, $char->{pos_to});
 	debug "You're moving from ($char->{pos}{x}, $char->{pos}{y}) to ($char->{pos_to}{x}, $char->{pos_to}{y}) - distance $dist\n", "parseMsg_move";
 	$char->{time_move} = time;
-	$char->{time_move_calc} = calcTime($char->{pos}, $char->{pos_to}, ($char->{walk_speed} || 0.12));
+	
+	my $speed = ($char->{walk_speed} || 0.12);
+	my $my_solution = get_solution($field, $char->{pos}, $char->{pos_to});
+	my $time = calcTimeFromSolution($my_solution, $speed);
+	$char->{solution} = $my_solution;
+	$char->{time_move_calc} = $time;
 
 	# Correct the direction in which we're looking
 	my (%vec, $degree);
@@ -7234,6 +7281,8 @@ sub map_change {
 	$char->{pos_to} = {%coords};
 	$char->{time_move} = 0;
 	$char->{time_move_calc} = 0;
+	$char->{solution} = [];
+	push(@{$char->{solution}}, { x => $char->{pos}{x}, y => $char->{pos}{y} });
 	message TF("Map Change: %s (%s, %s)\n", $args->{map}, $char->{pos}{x}, $char->{pos}{y}), "connection";
 	if ($net->version == 1) {
 		ai_clientSuspend(0, $timeout{'ai_clientSuspend'}{'timeout'});
@@ -7286,6 +7335,8 @@ sub map_changed {
 	$char->{pos_to} = {%coords};
 	$char->{time_move} = 0;
 	$char->{time_move_calc} = 0;
+	$char->{solution} = [];
+	push(@{$char->{solution}}, { x => $char->{pos}{x}, y => $char->{pos}{y} });
 
 	undef $conState_tries;
 	main::initMapChangeVars();
@@ -10042,6 +10093,127 @@ sub cash_dealer {
 }
 
 ##
+# 08D5 <unknown>.W <Reply>.W <MoveCountLeft>.W
+# @author [Cydh]
+##
+sub char_move_slot_reply {
+	my ($self, $args) = @_;
+	if ($args->{reply} == 0) {
+		if (defined $AI::temp::moveIndex) {
+			message TF("Character %s moved from %d to %d.\n", $chars[$AI::temp::moveIndex]{name}, $AI::temp::moveIndex, $AI::temp::moveToIndex), "info";
+			my $movedChar = $chars[$AI::temp::moveIndex]; # Save temp
+			$chars[$AI::temp::moveIndex] = $chars[$AI::temp::moveToIndex];
+			$chars[$AI::temp::moveToIndex] = $movedChar;
+			$chars[$AI::temp::moveToIndex]{slot_addon} = $args->{slot_addon};
+			undef $AI::temp::moveIndex;
+			undef $AI::temp::moveToIndex;
+		} else {
+			message T("Character moved.\n"), "info";
+			relog(10);
+			return;
+		}
+	} else {
+		if (defined $AI::temp::moveIndex) {
+			message TF("Failed to move character %s from %d to %d.\n", $chars[$AI::temp::moveIndex]{name}, $AI::temp::moveIndex, $AI::temp::moveToIndex), "info";
+			undef $AI::temp::moveIndex;
+			undef $AI::temp::moveToIndex;
+		} else {
+			message T("Failed to move a character slot.\n"), "info";
+		}
+	}
+
+	if (charSelectScreen() == 1) {
+		$net->setState(3);
+		$firstLoginMap = 1;
+		$startingzeny = $chars[$config{'char'}]{'zeny'} unless defined $startingzeny;
+		$sentWelcomeMessage = 1;
+	}
+	debug "char_move_slot_reply unknown:$args->{unknown}, reply:$args->{reply}, slot_addon:$args->{slot_addon}\n", "parseMsg";
+}
+
+##
+# 08E3 <charID>.L <unknown>.74B <CharInfo>.66B
+# CharInfo: 'Z24 C8 v Z16 V4'
+# @author [Cydh]
+##
+sub char_renamed {
+	my ($self, $args) = @_;
+
+	if (defined $AI::temp::charRenameIndex) {
+		my $charIndex = $AI::temp::charRenameIndex;
+		message TF("Character \"%s\" renamed to \"%s\"\n", $chars[$charIndex]{name}, $AI::temp::charRenameName), "info";
+		my $char_info = $self->received_characters_unpackString;
+		my $character = new Actor::You;
+		@{$character}{@{$char_info->{keys}}} = unpack($char_info->{types}, substr($args->{charInfo}, 0, $masterServer->{charBlockSize}));
+		my $name = bytesToString($character->{name});
+
+		if ($name ne $AI::temp::charRenameName) {
+			error TF("Name mismatch! %s <-> %s\n", $name, $AI::temp::charRenameName), "info";
+		}
+
+		$chars[$charIndex]{name} = $name;
+		$chars[$charIndex]{rename_addon} = $character->{rename_addon};
+
+		undef $AI::temp::charRenameIndex;
+		undef $AI::temp::charRenameName;
+
+		if (charSelectScreen() == 1) {
+			$net->setState(3);
+			$firstLoginMap = 1;
+			$startingzeny = $chars[$config{'char'}]{'zeny'} unless defined $startingzeny;
+			$sentWelcomeMessage = 1;
+		}
+	} else {
+		message T("Character renamed.\n"), "info";
+		relog(10);
+		return;
+	}
+
+	debug "char_renamed result:$args->{result}\n", "parseMsg";
+}
+
+##
+# 08FD <Result>.W <unknown>.W
+# @author [Cydh]
+##
+sub char_rename_result {
+	my ($self, $args) = @_;
+
+	# 0: Success
+	if ($args->{result} == 0 && defined $AI::temp::charRenameIndex) {
+		my $charIndex = $AI::temp::charRenameIndex;
+		message TF("Character \"%s\" renamed to \"%s\"\n", $chars[$charIndex]{name}, $AI::temp::charRenameName), "info";
+		return;
+	# 4: Fail already exists
+	} elsif ($args->{result} == 4) {
+		error TF("Cannot rename character to \"%s\". Name is already exists.\n", $AI::temp::charRenameName);
+	# 5: Fail in guild
+	} elsif ($args->{result} == 5) {
+		error TF("To rename a character you must withdraw from the guild.\n");
+	# 5: Fail in party
+	} elsif ($args->{result} == 6) {
+		error TF("To rename a character you must withdraw from the party.\n");
+	# 9: Invalid name
+	} elsif ($args->{result} == 9) {
+		error TF("Invalid new name \"%s\".\n", $AI::temp::charRenameName);
+	} else {
+		error TF("Unknown rename result occured:%d\n", $args->{result});
+	}
+
+	debug "char_rename_result result:$args->{result}\n";
+
+	undef $AI::temp::charRenameIndex;
+	undef $AI::temp::charRenameName;
+
+	if (charSelectScreen() == 1) {
+		$net->setState(3);
+		$firstLoginMap = 1;
+		$startingzeny = $chars[$config{'char'}]{'zeny'} unless defined $startingzeny;
+		$sentWelcomeMessage = 1;
+	}
+}
+
+##
 # 096D <size>.W { <index>.W }*
 # @author [Cydh]
 ##
@@ -11146,16 +11318,14 @@ sub monster_ranged_attack {
 
 	my $monster = $monstersList->getByID($ID);
 	if ($monster) {
-		$monster->{pos} = {%coords1};
-		$monster->{pos_to} = {%coords1};
-		$monster->{time_move} = time;
-		$monster->{time_move_calc} = 0;
+		$monster->{movetoattack_pos} = {%coords1};
+		$monster->{movetoattack_time} = time;
 	}
-	$char->{pos} = {%coords2};
-	$char->{pos_to} = {%coords2};
-	$char->{time_move} = time;
-	$char->{time_move_calc} = 0;
-	debug "Received Failed to attack target - you: $coords2{x},$coords2{y} - monster: $coords1{x},$coords1{y} - range $range\n", "parseMsg_move", 2;
+	$char->{movetoattack_pos} = {%coords2};
+	$char->{movetoattack_time} = time;
+	warning "Received Failed to attack target - you: $coords2{x},$coords2{y} - monster: $coords1{x},$coords1{y} - range $range\n", "parseMsg_move";
+
+	Plugins::callHook('monster_ranged_attack', {ID => $ID});
 }
 
 sub mvp_item {

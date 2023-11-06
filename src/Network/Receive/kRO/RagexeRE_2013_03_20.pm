@@ -20,6 +20,10 @@ use base qw(Network::Receive::kRO::RagexeRE_2012_06_18a);
 sub new {
 	my ($class) = @_;
 	my $self = $class->SUPER::new(@_);
+	
+	my %packets = (
+		'099B' => ['map_property', 'v b16', [qw(map_type info_bits)]], #8
+	);
 
 	my %handlers = qw(
 		received_characters 099D
