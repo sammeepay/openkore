@@ -138,19 +138,6 @@ sub process {
 				$attackSeq->{needReajust} = 1;
 			}
 
-		} elsif (
-			$target->{type} ne 'Unknown' &&
-			$attackSeq->{monsterPos} &&
-			%{$attackSeq->{monsterPos}} &&
-			$attackSeq->{monsterLastMoveTime} &&
-			$attackSeq->{attackMethod}{maxDistance} == 1 &&
-			canReachMeleeAttack($realMyPos, $realMonsterPos) &&
-			(blockDistance($realMyPos, $realMonsterPos) < 2 || !$config{$slave->{configPrefix}.'attackCheckLOS'} ||($config{$slave->{configPrefix}.'attackCheckLOS'} && blockDistance($realMyPos, $realMonsterPos) == 2 && $field->checkLOS($realMyPos, $realMonsterPos, $config{$slave->{configPrefix}.'attackCanSnipe'})))
-		) {
-			debug "$slave target $target is now reachable by melee attacks during routing to it.\n", 'slave_attack';
-			$slave->dequeue while ($slave->is("move", "route"));
-
-			$attackSeq->{ai_attack_giveup}{time} = time;
 		}
 
 		$timeout{$slave->{ai_route_adjust_timeout}}{time} = time;
@@ -163,12 +150,13 @@ sub process {
 }
 
 sub shouldGiveUp {
-	my ($slave, $args, $ID, $LOS) = @_;
+	my ($slave, $args, $ID) = @_;
 	return !$config{$slave->{configPrefix}.'attackNoGiveup'} && (timeOut($args->{ai_attack_giveup}) || $args->{unstuck}{count} > 5)
 }
 
 sub giveUp {
-	my ($slave, $args, $ID) = @_;
+	my ($slave, $args, $ID, $LOS) = @_;
+	my $target = Actor::get($ID);
 	if ($monsters{$ID}) {
 		if ($LOS) {
 			$target->{attack_failedLOS} = time;
